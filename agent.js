@@ -29,43 +29,21 @@ async function runAgent() {
     month: "long",
     day: "numeric",
   });
+const prompt = `Today is ${today}. Search for news from the last 48 hours about PE-backed industrial roll-up platforms: new platform formations, acquisitions, capital raises, and executive hires.
 
-  const prompt = `Today is ${today}. You are a deal intelligence analyst tracking early-stage PE-backed industrial roll-up platforms.
+Track these companies: ${NAMED_COMPANIES.join(", ")}
+Track these sectors: pavement maintenance, commercial HVAC/electrical, specialty distribution, water/wastewater, infrastructure maintenance.
 
-Search the web for the latest news (last 24-48 hours) across these sectors:
-${SECTORS.map((s) => `- ${s}`).join("\n")}
-
-Also search for recent news about: ${NAMED_COMPANIES.join(", ")}
-
-Look for: new platform formations, PE capital raises, acquisition announcements, executive hires at roll-up platforms.
-
-Return a JSON object with this exact structure (no markdown, no backticks, just raw JSON):
+Return ONLY a raw JSON object, no preamble:
 {
   "date": "${today}",
-  "hot": [
-    {
-      "company": "Company Name",
-      "sector": "Sector",
-      "headline": "One line summary of what happened",
-      "detail": "2-3 sentences of context",
-      "why_it_matters": "1-2 sentences on significance for someone tracking early-stage platforms"
-    }
-  ],
-  "watchlist": [
-    {
-      "company": "Company Name",
-      "sector": "Sector",
-      "note": "What to watch for / current status"
-    }
-  ],
-  "signal": "One or two sentences on a macro trend across the space today."
+  "hot": [{"company":"","sector":"","headline":"","detail":"","why_it_matters":""}],
+  "watchlist": [{"company":"","sector":"","note":""}],
+  "signal": ""
 }
 
-Rules:
-- hot: only real news from last 48hrs. If none, return empty array.
-- watchlist: always include 2-3 companies worth monitoring.
-- signal: one macro observation.
-- Return ONLY the JSON. No preamble, no explanation, no markdown fences.`;
+hot = real news last 48hrs only (empty array if none). watchlist = 2-3 companies to monitor. signal = one macro trend sentence.`;
+
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
