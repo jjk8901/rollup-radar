@@ -7,6 +7,6 @@
     "start": "node agent.js"
   },
   "dependencies": {
-    "nodemailer": "^6.9.9"
+    "resend": "^3.2.0"
   }
 }
