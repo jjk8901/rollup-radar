@@ -1,0 +1,12 @@
+{
+  "name": "rollup-radar",
+  "version": "1.0.0",
+  "description": "Daily industrial roll-up platform intelligence brief",
+  "main": "agent.js",
+  "scripts": {
+    "start": "node agent.js"
+  },
+  "dependencies": {
+    "nodemailer": "^6.9.9"
+  }
+}

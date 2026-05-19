@@ -1,0 +1,30 @@
+name: Daily Roll-Up Radar
+
+on:
+  schedule:
+    - cron: '0 12 * * *'  # 8am ET (UTC-4) every day
+  workflow_dispatch:       # allows manual trigger from Actions tab
+
+jobs:
+  send-brief:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run Roll-Up Radar agent
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
+        run: node agent.js
