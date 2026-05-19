@@ -17,6 +17,7 @@ const NAMED_COMPANIES = [
   "Apex Service Partners",
   "BrightSpring",
   "Inframark",
+  "Ascend Safety Collective",
 ];
 
 async function runAgent() {
@@ -29,41 +30,42 @@ async function runAgent() {
     day: "numeric",
   });
 
-  const prompt = `Today is ${today}. You are a deal intelligence analyst tracking early-stage PE-backed industrial roll-up platforms — companies in the mold of Pave America, Groundworks, or early XPO/United Waste.
+  const prompt = `Today is ${today}. You are a deal intelligence analyst tracking early-stage PE-backed industrial roll-up platforms.
 
 Search the web for the latest news (last 24-48 hours) across these sectors:
 ${SECTORS.map((s) => `- ${s}`).join("\n")}
 
-Also search specifically for recent news about these named companies:
-${NAMED_COMPANIES.map((c) => `- ${c}`).join("\n")}
+Also search for recent news about: ${NAMED_COMPANIES.join(", ")}
 
-Additionally scan these high-value sources for relevant deal activity:
-- PE Hub, Axios Pro Rata, Pitchbook News
-- Business Wire and PR Newswire (PE platform announcements)
-- ENR (Engineering News-Record) for contractor roll-ups
-- Trade publications: Waste360, ACHR News (HVAC), WaterWorld
+Look for: new platform formations, PE capital raises, acquisition announcements, executive hires at roll-up platforms.
 
-Look specifically for:
-- New platform formations (PE firm + operator teaming up to consolidate a sector)
-- Fresh PE capital raises or recapitalizations for existing platforms
-- Acquisition announcements by industrial roll-up platforms
-- New executive hires (CEO, COO, Chief of Staff, Head of Strategy, Head of Value Creation) at these companies
-- Any "announcing our partnership with [PE firm]" press releases
+Return a JSON object with this exact structure (no markdown, no backticks, just raw JSON):
+{
+  "date": "${today}",
+  "hot": [
+    {
+      "company": "Company Name",
+      "sector": "Sector",
+      "headline": "One line summary of what happened",
+      "detail": "2-3 sentences of context",
+      "why_it_matters": "1-2 sentences on significance for someone tracking early-stage platforms"
+    }
+  ],
+  "watchlist": [
+    {
+      "company": "Company Name",
+      "sector": "Sector",
+      "note": "What to watch for / current status"
+    }
+  ],
+  "signal": "One or two sentences on a macro trend across the space today."
+}
 
-Format your response as a clean daily brief with this EXACT structure:
-
-ROLL-UP RADAR - ${today}
-
-HOT (material news in last 24-48hrs):
-[If any] - COMPANY | SECTOR | What happened | Why it matters
-
-WATCHLIST (companies to keep eyes on today):
-[Always include 2-3] - COMPANY | SECTOR | What to watch for
-
-SIGNAL (one broader trend or theme worth noting):
-[1-2 sentences on a macro pattern across the space]
-
-Keep the whole brief under 450 words. Be specific - no filler, no generic observations. If a section has nothing real to report, say "Nothing material today" rather than inventing news.`;
+Rules:
+- hot: only real news from last 48hrs. If none, return empty array.
+- watchlist: always include 2-3 companies worth monitoring.
+- signal: one macro observation.
+- Return ONLY the JSON. No preamble, no explanation, no markdown fences.`;
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -74,79 +76,139 @@ Keep the whole brief under 450 words. Be specific - no filler, no generic observ
     },
     body: JSON.stringify({
       model: "claude-sonnet-4-6",
-      max_tokens: 1500,
-      tools: [
-        {
-          type: "web_search_20250305",
-          name: "web_search",
-        },
-      ],
+      max_tokens: 2000,
+      tools: [{ type: "web_search_20250305", name: "web_search" }],
       messages: [{ role: "user", content: prompt }],
     }),
   });
 
   const data = await response.json();
+  if (!response.ok) throw new Error(`API error: ${JSON.stringify(data)}`);
 
-  if (!response.ok) {
-    throw new Error(`Anthropic API error: ${JSON.stringify(data)}`);
+  const rawText = data.content
+    .filter((b) => b.type === "text")
+    .map((b) => b.text)
+    .join("\n")
+    .trim();
+
+  let brief;
+  try {
+    const clean = rawText.replace(/```json|```/g, "").trim();
+    brief = JSON.parse(clean);
+  } catch (e) {
+    console.error("Failed to parse JSON:", rawText);
+    throw new Error("Could not parse brief JSON");
   }
 
-  const briefText = data.content
-    .filter((block) => block.type === "text")
-    .map((block) => block.text)
-    .join("\n");
-
-  console.log("Brief generated:\n", briefText);
-
-  await sendEmail(briefText, today);
+  console.log("Brief generated:", JSON.stringify(brief, null, 2));
+  await sendEmail(brief);
   console.log("Email sent successfully.");
 }
 
-async function sendEmail(brief, dateStr) {
+function buildHtml(brief) {
+  const hotSection = brief.hot && brief.hot.length > 0
+    ? brief.hot.map(item => `
+      <div style="background:#fff;border:1px solid #e5e7eb;border-left:4px solid #dc2626;border-radius:6px;padding:16px 20px;margin-bottom:12px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+          <span style="font-weight:700;font-size:14px;color:#111;">${item.company}</span>
+          <span style="background:#f3f4f6;color:#6b7280;font-size:11px;padding:2px 8px;border-radius:99px;">${item.sector}</span>
+        </div>
+        <p style="font-weight:600;font-size:13px;color:#1f2937;margin:0 0 8px;">${item.headline}</p>
+        <p style="font-size:13px;color:#374151;line-height:1.6;margin:0 0 8px;">${item.detail}</p>
+        <div style="background:#fef2f2;border-radius:4px;padding:8px 12px;">
+          <span style="font-size:12px;font-weight:600;color:#dc2626;">Why it matters: </span>
+          <span style="font-size:12px;color:#374151;">${item.why_it_matters}</span>
+        </div>
+      </div>`).join("")
+    : `<div style="background:#f9fafb;border-radius:6px;padding:12px 16px;color:#6b7280;font-size:13px;">Nothing material in the last 48 hours.</div>`;
+
+  const watchlistSection = (brief.watchlist || []).map(item => `
+    <div style="display:flex;gap:12px;padding:12px 0;border-bottom:1px solid #f3f4f6;">
+      <div style="flex:1;">
+        <span style="font-weight:600;font-size:13px;color:#111;">${item.company}</span>
+        <span style="background:#eff6ff;color:#2563eb;font-size:11px;padding:2px 8px;border-radius:99px;margin-left:8px;">${item.sector}</span>
+        <p style="font-size:13px;color:#374151;margin:4px 0 0;line-height:1.5;">${item.note}</p>
+      </div>
+    </div>`).join("");
+
+  return `<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,sans-serif;">
+  <div style="max-width:600px;margin:0 auto;padding:24px 16px;">
+
+    <!-- Header -->
+    <div style="background:#111;border-radius:8px 8px 0 0;padding:20px 24px;display:flex;align-items:center;justify-content:space-between;">
+      <div>
+        <div style="color:#fff;font-size:18px;font-weight:800;letter-spacing:-0.5px;">🏗 Roll-Up Radar</div>
+        <div style="color:#9ca3af;font-size:12px;margin-top:2px;">${brief.date}</div>
+      </div>
+      <div style="color:#6b7280;font-size:11px;">Daily Industrial Intelligence</div>
+    </div>
+
+    <!-- Hot Section -->
+    <div style="background:#fff;padding:20px 24px;border-left:1px solid #e5e7eb;border-right:1px solid #e5e7eb;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+        <span style="font-size:16px;">🔥</span>
+        <span style="font-weight:700;font-size:14px;color:#111;text-transform:uppercase;letter-spacing:0.5px;">Hot — Last 48hrs</span>
+      </div>
+      ${hotSection}
+    </div>
+
+    <!-- Watchlist Section -->
+    <div style="background:#fff;padding:20px 24px;border-left:1px solid #e5e7eb;border-right:1px solid #e5e7eb;border-top:1px solid #f3f4f6;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+        <span style="font-size:16px;">👀</span>
+        <span style="font-weight:700;font-size:14px;color:#111;text-transform:uppercase;letter-spacing:0.5px;">Watchlist</span>
+      </div>
+      ${watchlistSection}
+    </div>
+
+    <!-- Signal Section -->
+    <div style="background:#eff6ff;padding:16px 24px;border:1px solid #bfdbfe;border-top:none;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <span style="font-size:16px;">📡</span>
+        <span style="font-weight:700;font-size:13px;color:#1d4ed8;text-transform:uppercase;letter-spacing:0.5px;">Signal</span>
+      </div>
+      <p style="font-size:13px;color:#1e3a5f;line-height:1.6;margin:0;">${brief.signal}</p>
+    </div>
+
+    <!-- Footer -->
+    <div style="background:#fff;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px;padding:12px 24px;text-align:center;">
+      <p style="font-size:11px;color:#9ca3af;margin:0;">Roll-Up Radar · Daily PE-backed industrial platform intelligence</p>
+    </div>
+
+  </div>
+</body>
+</html>`;
+}
+
+async function sendEmail(brief) {
   const resend = new Resend(process.env.RESEND_API_KEY);
+  const html = buildHtml(brief);
+  const dateStr = brief.date;
 
-  const lines = brief.split("\n");
-  let html = `<div style="max-width:600px;margin:0 auto;padding:24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;">`;
-
-  for (const line of lines) {
-    if (line.startsWith("ROLL-UP RADAR")) {
-      html += `<h2 style="font-size:18px;font-weight:700;color:#111;border-bottom:2px solid #2563eb;padding-bottom:8px;margin-bottom:20px;">${line}</h2>`;
-    } else if (line.startsWith("HOT") || line.startsWith("WATCHLIST") || line.startsWith("SIGNAL")) {
-      html += `<h3 style="font-size:14px;font-weight:700;color:#374151;margin:20px 0 8px;">${line}</h3>`;
-    } else if (line.startsWith("-")) {
-      const content = line.slice(1).trim();
-      const parts = content.split("|").map((p) => p.trim());
-      if (parts.length >= 3) {
-        html += `<div style="border-left:3px solid #2563eb;padding:8px 12px;margin:8px 0;background:#f8fafc;">
-          <strong style="color:#111;font-size:13px;">${parts[0]}</strong>
-          <span style="color:#6b7280;font-size:12px;margin-left:8px;">${parts[1]}</span>
-          <p style="margin:4px 0 0;font-size:13px;color:#374151;line-height:1.5;">${parts.slice(2).join(" | ")}</p>
-        </div>`;
-      } else {
-        html += `<p style="font-size:13px;color:#374151;margin:6px 0;padding-left:12px;">- ${content}</p>`;
-      }
-    } else if (line.trim() === "") {
-      html += `<div style="height:4px;"></div>`;
-    } else {
-      html += `<p style="font-size:13px;color:#374151;line-height:1.6;margin:6px 0;">${line}</p>`;
-    }
-  }
-
-  html += `<hr style="margin-top:32px;border:none;border-top:1px solid #e5e7eb;"/>
-    <p style="font-size:11px;color:#9ca3af;margin-top:8px;">Roll-Up Radar - Daily industrial platform intelligence</p>
-  </div>`;
+  const plainText = [
+    `ROLL-UP RADAR — ${dateStr}`,
+    "",
+    "🔥 HOT:",
+    ...(brief.hot || []).map(i => `• ${i.company} | ${i.sector}\n  ${i.headline}\n  ${i.detail}\n  Why it matters: ${i.why_it_matters}`),
+    "",
+    "👀 WATCHLIST:",
+    ...(brief.watchlist || []).map(i => `• ${i.company} | ${i.sector}: ${i.note}`),
+    "",
+    "📡 SIGNAL:",
+    brief.signal,
+  ].join("\n");
 
   const { error } = await resend.emails.send({
     from: "Roll-Up Radar <onboarding@resend.dev>",
     to: process.env.RECIPIENT_EMAIL,
-    subject: `Roll-Up Radar - ${dateStr}`,
+    subject: `🏗 Roll-Up Radar — ${dateStr}`,
     html,
-    text: brief,
+    text: plainText,
   });
 
-  if (error) {
-    throw new Error(`Resend error: ${JSON.stringify(error)}`);
-  }
+  if (error) throw new Error(`Resend error: ${JSON.stringify(error)}`);
 }
 
 runAgent().catch((err) => {
