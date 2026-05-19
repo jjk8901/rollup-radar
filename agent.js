@@ -93,7 +93,9 @@ Rules:
 
   let brief;
   try {
-    const clean = rawText.replace(/```json|```/g, "").trim();
+  const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+if (!jsonMatch) throw new Error("No JSON found in response");
+const clean = jsonMatch[0];
     brief = JSON.parse(clean);
   } catch (e) {
     console.error("Failed to parse JSON:", rawText);
