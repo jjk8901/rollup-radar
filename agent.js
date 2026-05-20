@@ -54,7 +54,7 @@ hot = real news last 48hrs only (empty array if none). watchlist = 2-3 companies
     },
     body: JSON.stringify({
       model: "claude-sonnet-4-6",
-      max_tokens: 2000,
+      max_tokens: 3000,
       tools: [{ type: "web_search_20250305", name: "web_search" }],
       messages: [{ role: "user", content: prompt }],
     }),
